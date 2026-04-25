@@ -1,3 +1,6 @@
+require("dotenv").config();
+require("./modules/bot/bot");
+
 const app = require("./app");
 
 const PORT = process.env.PORT || 5000;
