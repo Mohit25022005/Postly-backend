@@ -1,5 +1,6 @@
 require("dotenv").config();
 require("./modules/bot/bot");
+require("./modules/queue/worker");
 
 const app = require("./app");
 

@@ -21,6 +21,7 @@ model User {
   posts           Post[]
   ai_keys         AIKey?
   refresh_token   String?
+  telegram_id     String?  @unique
 }
 
 model SocialAccount {

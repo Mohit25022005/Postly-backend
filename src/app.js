@@ -5,5 +5,6 @@ app.use(express.json());
 
 app.use("/api/auth", require("./modules/auth/auth.routes"));
 app.use("/api/content", require("./modules/ai/ai.routes"));
+app.use("/api/posts", require("./modules/post/post.routes"));
 
 module.exports = app;
