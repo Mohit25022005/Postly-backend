@@ -20,6 +20,7 @@ model User {
   social_accounts SocialAccount[]
   posts           Post[]
   ai_keys         AIKey?
+  refresh_token   String?
 }
 
 model SocialAccount {
