@@ -1,5 +1,6 @@
 const Redis = require("ioredis");
-const redis = new Redis();
+// const redis = new Redis();
+const redis = require("../../config/redis");
 
 const axios = require("axios");
 const userService = require("../user/user.service");

@@ -1,6 +1,6 @@
 const { Worker } = require("bullmq");
 const prisma = require("../../config/db");
-const connection = require("../../config/redis");
+const redis = require("../../config/redis");
 
 const worker = new Worker(
   "post-queue",
@@ -43,7 +43,7 @@ const worker = new Worker(
     }
   },
   {
-    connection,
+    connection: redis,
   }
 );
 

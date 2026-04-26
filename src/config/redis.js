@@ -1,10 +1,12 @@
-const IORedis = require("ioredis");
+const Redis = require("ioredis");
 
-console.log("REDIS URL:", process.env.REDIS_URL);
-
-const connection = new IORedis(process.env.REDIS_URL, {
+const redis = new Redis(process.env.REDIS_URL, {
+  tls: { rejectUnauthorized: false }, 
   maxRetriesPerRequest: null,
-  tls: {}, 
+  enableReadyCheck: false,
 });
 
-module.exports = connection;
+redis.on("connect", () => console.log("✅ Redis connected"));
+redis.on("error", (err) => console.error("❌ Redis error:", err.message));
+
+module.exports = redis;
