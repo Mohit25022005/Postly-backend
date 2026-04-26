@@ -8,7 +8,7 @@ const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, {
 bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
 
-    await redis.del(`chat:${chatId}`);
+    //await redis.del(`chat:${chatId}`);
 
     bot.sendMessage(chatId, "Hey 👋 Use /post to create content");
 });
