@@ -45,9 +45,11 @@ exports.handleMessage = async (bot, msg) => {
     if (!state) return;
     // ===== CONNECT PLATFORM =====
     if (state.step === "connect_platform") {
+        const platform = text.toLowerCase();
+
         const validPlatforms = ["twitter", "linkedin", "instagram", "threads"];
 
-        if (!validPlatforms.includes(text)) {
+        if (!validPlatforms.includes(platform)) {
             return bot.sendMessage(
                 chatId,
                 "❌ Invalid platform. Choose Twitter, LinkedIn, Instagram, or Threads"
@@ -57,20 +59,30 @@ exports.handleMessage = async (bot, msg) => {
         try {
             const user = await userService.findOrCreateTelegramUser(msg.from);
 
-            await userService.addSocialAccount(user.id, {
-                platform: text,
-                access_token: "demo_token",
-                refresh_token: "demo_refresh",
-                handle: "@demo_user",
-            });
+            // ===== REAL TWITTER FLOW =====
+            if (platform === "twitter") {
+                const url = `${process.env.RENDER_EXTERNAL_URL}/api/auth/twitter/login?user_id=${user.id}`;
 
-            await redis.del(`chat:${chatId}`);
+                await redis.del(`chat:${chatId}`);
 
-            return bot.sendMessage(
-                chatId,
-                `✅ ${text.toUpperCase()} connected successfully!`,
-                { reply_markup: { remove_keyboard: true } }
-            );
+                return bot.sendMessage(
+                    chatId,
+                    `🐦 Connect your Twitter account:\n\n${url}\n\nAfter connecting, come back and use /accounts`,
+                    { reply_markup: { remove_keyboard: true } }
+                );
+            }
+
+            // ===== OTHER PLATFORMS (NOT IMPLEMENTED) =====
+            if (["linkedin", "instagram", "threads"].includes(platform)) {
+                await redis.del(`chat:${chatId}`);
+
+                return bot.sendMessage(
+                    chatId,
+                    "🚧 This platform is not integrated yet.\nCurrently only Twitter is supported.",
+                    { reply_markup: { remove_keyboard: true } }
+                );
+            }
+
         } catch (err) {
             console.error(err);
             return bot.sendMessage(chatId, "❌ Failed to connect account");
@@ -399,7 +411,7 @@ exports.handleConnect = async (bot, msg) => {
     const chatId = msg.chat.id;
 
     await redis.del(`chat:${chatId}`);
-    await setState(chatId, { step: "connect_platform" });
+    await setState(chatId, { step: "connect_platform", data: {} });
 
     return bot.sendMessage(
         chatId,
@@ -407,8 +419,8 @@ exports.handleConnect = async (bot, msg) => {
         {
             reply_markup: {
                 keyboard: [
-                    ["Twitter", "LinkedIn"],
-                    ["Instagram", "Threads"]
+                    ["Twitter"],
+                    ["LinkedIn", "Instagram", "Threads"]
                 ],
                 resize_keyboard: true,
                 one_time_keyboard: true
@@ -418,25 +430,25 @@ exports.handleConnect = async (bot, msg) => {
 };
 
 exports.handleApiKey = async (bot, msg) => {
-  const chatId = msg.chat.id;
+    const chatId = msg.chat.id;
 
-  await redis.del(`chat:${chatId}`);
-  await setState(chatId, { step: "api_key_type", data: {} });
+    await redis.del(`chat:${chatId}`);
+    await setState(chatId, { step: "api_key_type", data: {} });
 
-  return bot.sendMessage(
-    chatId,
-    "🔑 Which API key do you want to add?",
-    {
-      reply_markup: {
-        keyboard: [
-          ["OpenAI"],
-          ["Anthropic"]
-        ],
-        resize_keyboard: true,
-        one_time_keyboard: true
-      }
-    }
-  );
+    return bot.sendMessage(
+        chatId,
+        "🔑 Which API key do you want to add?",
+        {
+            reply_markup: {
+                keyboard: [
+                    ["OpenAI"],
+                    ["Anthropic"]
+                ],
+                resize_keyboard: true,
+                one_time_keyboard: true
+            }
+        }
+    );
 };
 
 
