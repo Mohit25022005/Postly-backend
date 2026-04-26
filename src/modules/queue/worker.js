@@ -42,7 +42,13 @@ const worker = new Worker(
     }
   },
   {
-    connection: { host: "127.0.0.1", port: 6379 },
+    connection: {
+      host: process.env.REDIS_HOST,
+      port: Number(process.env.REDIS_PORT),
+      ...(process.env.REDIS_PASSWORD && {
+        password: process.env.REDIS_PASSWORD,
+      }),
+    },
   }
 );
 

@@ -2,8 +2,11 @@ const { Queue } = require("bullmq");
 
 const queue = new Queue("post-queue", {
   connection: {
-    host: "127.0.0.1",
-    port: 6379,
+    host: process.env.REDIS_HOST,
+    port: Number(process.env.REDIS_PORT),
+    ...(process.env.REDIS_PASSWORD && {
+      password: process.env.REDIS_PASSWORD,
+    }),
   },
 });
 
