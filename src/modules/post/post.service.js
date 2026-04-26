@@ -16,11 +16,16 @@ exports.publishPost = async (userId, data) => {
 
     // 2. Create platform posts + queue jobs
     for (const platform of data.platforms) {
+        const platformData = data.generated?.[platform];
+
+        // 🚫 Skip if no content
+        if (!platformData?.content) continue;
+
         const platformPost = await prisma.platformPost.create({
             data: {
                 post_id: post.id,
                 platform,
-                content: data.generated[platform] || "",
+                content: platformData.content,
                 status: "queued",
             },
         });

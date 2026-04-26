@@ -1,80 +1,202 @@
 const OpenAI = require("openai");
 const Anthropic = require("@anthropic-ai/sdk");
 
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-});
+// ================= CLIENT FACTORY =================
+const getOpenAI = (key) =>
+  new OpenAI({
+    apiKey: key || process.env.OPENAI_API_KEY,
+  });
 
-const anthropic = new Anthropic({
-    apiKey: process.env.ANTHROPIC_API_KEY,
-});
+const getAnthropic = (key) =>
+  new Anthropic({
+    apiKey: key || process.env.ANTHROPIC_API_KEY,
+  });
 
-const buildPrompt = ({ idea, post_type, tone, platforms }) => {
-    return `
-You are a social media content generator.
+// ================= PROMPT =================
+const buildPrompt = ({ idea, post_type, tone, platforms, language }) => {
+  return `
+Generate STRICT social media content.
 
-Idea: ${idea}
-Post Type: ${post_type}
-Tone: ${tone}
+INPUT:
+- Idea: ${idea}
+- Post Type: ${post_type}
+- Tone: ${tone}
+- Language: ${language}
+- Platforms: ${platforms.join(", ")}
 
-Generate content for: ${platforms.join(", ")}
-
-Rules:
-- Twitter: max 280 chars, 2-3 hashtags
-- LinkedIn: 800-1300 chars, professional tone, 3-5 hashtags
-- Instagram: caption + 10-15 hashtags, emoji friendly
+RULES (STRICT):
+- Twitter: max 280 chars, 2–3 hashtags, punchy
+- LinkedIn: 800–1300 chars, ALWAYS professional tone, 3–5 hashtags
+- Instagram: caption + 10–15 hashtags, emoji-friendly
 - Threads: max 500 chars, conversational
 
-Return JSON like:
+OUTPUT STRICT JSON:
 {
-  "twitter": "...",
-  "linkedin": "...",
-  "instagram": "...",
-  "threads": "..."
+  "twitter": { "content": "...", "hashtags": ["#tag"] },
+  "linkedin": { "content": "...", "hashtags": ["#tag"] },
+  "instagram": { "content": "...", "hashtags": ["#tag"] },
+  "threads": { "content": "..." }
 }
+
+NO extra text. JSON only.
 `;
 };
 
-exports.generateContent = async (input) => {
-    const prompt = buildPrompt(input);
+// ================= HELPERS =================
+const extractHashtags = (text) => {
+  return text.match(/#\w+/g) || [];
+};
+
+const enforceRules = (data) => {
+  // Twitter
+  if (data.twitter) {
+    data.twitter.content = data.twitter.content.slice(0, 280);
+    let tags = extractHashtags(data.twitter.content);
+    data.twitter.hashtags = tags.slice(0, 3);
+  }
+
+  // Threads
+  if (data.threads) {
+    data.threads.content = data.threads.content.slice(0, 500);
+  }
+
+  // LinkedIn
+  if (data.linkedin) {
+    let content = data.linkedin.content;
+
+    if (content.length < 800) {
+      content = content + "\n\nThis is an important shift in the industry.";
+    }
+
+    data.linkedin.content = content.slice(0, 1300);
+    data.linkedin.hashtags = extractHashtags(content).slice(0, 5);
+  }
+
+  // Instagram
+  if (data.instagram) {
+    let tags = extractHashtags(data.instagram.content);
+
+    // ensure 10–15 hashtags
+    while (tags.length < 10) {
+      tags.push("#AI");
+    }
+
+    data.instagram.hashtags = tags.slice(0, 15);
+  }
+
+  return data;
+};
+
+const addMetadata = (data) => {
+  const result = {};
+
+  for (const key in data) {
+    const content = data[key]?.content || "";
+
+    result[key] = {
+      content,
+      char_count: content.length,
+      hashtags: data[key]?.hashtags || extractHashtags(content),
+    };
+  }
+
+  return result;
+};
+
+// ================= MAIN =================
+exports.generateContent = async (input, userKeys = {}) => {
+  const prompt = buildPrompt(input);
+
+  try {
+    let raw;
+    let model_used = "";
+    let tokens_used = 0;
+
+    // ===== OPENAI =====
+    if (input.model === "openai") {
+      const openai = getOpenAI(userKeys.openai_key);
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content:
+              "You strictly follow platform constraints and output JSON only.",
+          },
+          { role: "user", content: prompt },
+        ],
+      });
+
+      raw = response.choices[0].message.content;
+      model_used = "gpt-4o-mini";
+      tokens_used = response.usage?.total_tokens || 0;
+    }
+
+    // ===== ANTHROPIC =====
+    if (input.model === "anthropic") {
+      const anthropic = getAnthropic(userKeys.anthropic_key);
+
+      const response = await anthropic.messages.create({
+        model: "claude-3-haiku-20240307",
+        max_tokens: 1000,
+        messages: [{ role: "user", content: prompt }],
+      });
+
+      raw = response.content[0].text;
+      model_used = "claude-3-haiku";
+    }
+
+    let parsed;
 
     try {
-        if (input.model === "openai") {
-            const response = await openai.chat.completions.create({
-                model: "gpt-4o-mini",
-                messages: [{ role: "user", content: prompt }],
-            });
-
-            return JSON.parse(response.choices[0].message.content);
-        }
-
-        if (input.model === "anthropic") {
-            const response = await anthropic.messages.create({
-                model: "claude-3-haiku-20240307",
-                max_tokens: 1000,
-                messages: [{ role: "user", content: prompt }],
-            });
-
-            const content = response.content[0].text;
-
-            try {
-                return JSON.parse(content);
-            } catch {
-                return {
-                    twitter: content,
-                    linkedin: content,
-                };
-            }
-        }
-    } catch (err) {
-        console.error("AI ERROR:", err.message);
-
-        //FALLBACK
-        return {
-            twitter: `🚀 ${input.idea} #AI #Tech`,
-            linkedin: `${input.idea}\n\nThis is a powerful shift in the industry. What are your thoughts?\n\n#AI #Innovation #Startups`,
-            instagram: `${input.idea} ✨🔥\n\n#AI #Tech #Innovation #Future #StartupLife`,
-            threads: `${input.idea} – thoughts?`,
-        };
+      parsed = JSON.parse(raw);
+    } catch {
+      throw new Error("Invalid JSON from AI");
     }
+
+    parsed = enforceRules(parsed);
+
+    const filtered = {};
+    input.platforms.forEach((p) => {
+      if (parsed[p]) filtered[p] = parsed[p];
+    });
+
+    const generated = addMetadata(filtered);
+
+    return {
+      generated,
+      model_used,
+      tokens_used,
+    };
+  } catch (err) {
+    console.error("AI ERROR:", err.message);
+
+    // ===== FALLBACK =====
+    const fallback = {
+      twitter: {
+        content: `🚀 ${input.idea} #AI #Tech`,
+      },
+      linkedin: {
+        content: `${input.idea}\n\nThis is a major shift in the industry.\n\n#AI #Innovation`,
+      },
+      instagram: {
+        content: `${input.idea} ✨🔥\n\n#AI #Tech #Innovation`,
+      },
+      threads: {
+        content: `${input.idea} – thoughts?`,
+      },
+    };
+
+    const filtered = {};
+    input.platforms.forEach((p) => {
+      if (fallback[p]) filtered[p] = fallback[p];
+    });
+
+    return {
+      generated: addMetadata(filtered),
+      model_used: "fallback",
+      tokens_used: 0,
+    };
+  }
 };
