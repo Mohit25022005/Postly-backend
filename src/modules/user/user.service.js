@@ -2,25 +2,68 @@ const prisma = require("../../config/db");
 const { encrypt } = require("../../utils/encryption");
 
 exports.findOrCreateTelegramUser = async (telegramUser) => {
+  const telegramId = telegramUser.id.toString();
+
   const existing = await prisma.user.findUnique({
-    where: { telegram_id: telegramUser.id.toString() },
+    where: { telegram_id: telegramId },
   });
 
-  if (existing) return existing;
-
-  // create new user
-  const user = await prisma.user.create({
-    data: {
-      email: `tg_${telegramUser.id}@bot.com`, // dummy email
-      password_hash: "bot_user", // not used
-      name: telegramUser.first_name || "Telegram User",
-      telegram_id: telegramUser.id.toString(),
+  const userWithAccounts = await prisma.user.findFirst({
+    where: {
+      social_accounts: {
+        some: {},
+      },
     },
   });
 
-  return user;
+  if (existing && userWithAccounts && existing.id !== userWithAccounts.id) {
+    console.log("🔗 Merging Telegram user with existing user");
+
+    await prisma.post.updateMany({
+      where: { user_id: existing.id },
+      data: { user_id: userWithAccounts.id },
+    });
+
+    await prisma.socialAccount.updateMany({
+      where: { user_id: existing.id },
+      data: { user_id: userWithAccounts.id },
+    });
+
+    await prisma.user.update({
+      where: { id: existing.id },
+      data: { telegram_id: null },
+    });
+
+    await prisma.user.update({
+      where: { id: userWithAccounts.id },
+      data: { telegram_id: telegramId },
+    });
+
+    return userWithAccounts;
+  }
+
+  if (existing) return existing;
+
+  if (userWithAccounts) {
+    return prisma.user.update({
+      where: { id: userWithAccounts.id },
+      data: {
+        telegram_id: telegramId,
+      },
+    });
+  }
+
+  return prisma.user.create({
+    data: {
+      email: `tg_${telegramId}@bot.com`,
+      password_hash: "bot_user",
+      name: telegramUser.first_name || "Telegram User",
+      telegram_id: telegramId,
+    },
+  });
 };
 
+// ================= PROFILE =================
 exports.getProfile = async (userId) => {
   return prisma.user.findUnique({
     where: { id: userId },
@@ -47,6 +90,7 @@ exports.updateProfile = async (userId, data) => {
   });
 };
 
+// ================= SOCIAL ACCOUNTS =================
 exports.addSocialAccount = async (userId, data) => {
   return prisma.socialAccount.create({
     data: {
@@ -71,8 +115,7 @@ exports.deleteSocialAccount = async (userId, id) => {
   });
 };
 
-
-
+// ================= AI KEYS =================
 exports.saveAIKeys = async (userId, data) => {
   return prisma.aIKey.upsert({
     where: { user_id: userId },

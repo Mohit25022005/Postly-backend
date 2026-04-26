@@ -5,6 +5,7 @@ const axios = require("axios");
 const userService = require("../user/user.service");
 const postService = require("../post/post.service");
 
+// ================= STATE =================
 const getState = async (chatId) => {
     const data = await redis.get(`chat:${chatId}`);
     return data ? JSON.parse(data) : null;
@@ -14,53 +15,163 @@ const setState = async (chatId, state) => {
     await redis.set(`chat:${chatId}`, JSON.stringify(state), "EX", 1800);
 };
 
+// ================= START =================
 exports.startPostFlow = async (bot, msg) => {
     const chatId = msg.chat.id;
 
+    await redis.del(`chat:${chatId}`);
     await setState(chatId, { step: "type", data: {} });
 
-    bot.sendMessage(
-        chatId,
-        "What type of post?\n1. Announcement\n2. Thread\n3. Story"
-    );
+    return bot.sendMessage(chatId, "Hey 👋 What type of post is this?", {
+        reply_markup: {
+            keyboard: [
+                ["Announcement", "Thread"],
+                ["Story", "Promotional"],
+                ["Educational", "Opinion"],
+            ],
+            resize_keyboard: true,
+            one_time_keyboard: true,
+        },
+    });
 };
 
 // ================= HANDLE FLOW =================
 exports.handleMessage = async (bot, msg) => {
     const chatId = msg.chat.id;
-    const text = msg.text;
+    const text = msg.text?.toLowerCase();
 
     const state = await getState(chatId);
     if (!state) return;
 
+    // ===== TYPE =====
     if (state.step === "type") {
+        const validTypes = [
+            "announcement",
+            "thread",
+            "story",
+            "promotional",
+            "educational",
+            "opinion",
+        ];
+
+        if (!validTypes.includes(text)) {
+            return bot.sendMessage(
+                chatId,
+                "❌ Invalid type.\nChoose: Announcement | Thread | Story | Promotional | Educational | Opinion"
+            );
+        }
+
         state.data.post_type = text;
         state.step = "platform";
-
         await setState(chatId, state);
 
-        return bot.sendMessage(chatId, "Which platform? (twitter/linkedin)");
+        return bot.sendMessage(chatId, "Which platforms?", {
+            reply_markup: {
+                keyboard: [
+                    ["Twitter", "LinkedIn"],
+                    ["Instagram", "Threads"],
+                    ["All"],
+                ],
+                resize_keyboard: true,
+                one_time_keyboard: true,
+            },
+        });
     }
 
+    // ===== PLATFORM =====
     if (state.step === "platform") {
-        state.data.platforms = [text.toLowerCase()];
+        const validPlatforms = [
+            "twitter",
+            "linkedin",
+            "instagram",
+            "threads",
+            "all",
+        ];
+
+        if (!validPlatforms.includes(text)) {
+            return bot.sendMessage(
+                chatId,
+                "❌ Invalid platform.\nChoose: Twitter | LinkedIn | Instagram | Threads | All"
+            );
+        }
+
+        state.data.platforms =
+            text === "all"
+                ? ["twitter", "linkedin", "instagram", "threads"]
+                : [text];
+
         state.step = "tone";
-
         await setState(chatId, state);
 
-        return bot.sendMessage(chatId, "Choose tone (professional/casual)");
+        return bot.sendMessage(chatId, "Choose tone:", {
+            reply_markup: {
+                keyboard: [
+                    ["Professional", "Casual"],
+                    ["Witty", "Authoritative"],
+                    ["Friendly"],
+                ],
+                resize_keyboard: true,
+                one_time_keyboard: true,
+            },
+        });
     }
 
+    // ===== TONE =====
     if (state.step === "tone") {
-        state.data.tone = text;
-        state.step = "idea";
+        const validTones = [
+            "professional",
+            "casual",
+            "witty",
+            "authoritative",
+            "friendly",
+        ];
 
+        if (!validTones.includes(text)) {
+            return bot.sendMessage(
+                chatId,
+                "❌ Invalid tone.\nChoose: Professional | Casual | Witty | Authoritative | Friendly"
+            );
+        }
+
+        state.data.tone = text;
+        state.step = "model";
         await setState(chatId, state);
 
-        return bot.sendMessage(chatId, "Enter your idea (max 500 chars)");
+        return bot.sendMessage(chatId, "Which AI model?", {
+            reply_markup: {
+                keyboard: [["GPT-4o"], ["Claude Sonnet"]],
+                resize_keyboard: true,
+                one_time_keyboard: true,
+            },
+        });
     }
 
+    // ===== MODEL =====
+    if (state.step === "model") {
+        if (!text.includes("gpt") && !text.includes("claude")) {
+            return bot.sendMessage(
+                chatId,
+                "❌ Invalid model.\nChoose: GPT-4o or Claude Sonnet"
+            );
+        }
+
+        state.data.model = text.includes("claude") ? "anthropic" : "openai";
+        state.step = "idea";
+        await setState(chatId, state);
+
+        return bot.sendMessage(chatId, "Tell me the idea (max 500 chars)");
+    }
+
+    // ===== IDEA =====
     if (state.step === "idea") {
+        if (!text || text.length < 3) {
+            return bot.sendMessage(chatId, "❌ Idea too short.");
+        }
+
+        if (text.length > 500) {
+            return bot.sendMessage(chatId, "❌ Idea too long (max 500 chars)");
+        }
+
         state.data.idea = text;
 
         try {
@@ -70,128 +181,147 @@ exports.handleMessage = async (bot, msg) => {
                 "http://localhost:5000/api/content/generate",
                 {
                     ...state.data,
-                    model: "anthropic", // fallback safe
                     language: "en",
                 }
             );
 
             state.data.generated = response.data.data;
-            state.step = "confirm";
-
-            await setState(chatId, state);
-
-            return bot.sendMessage(
-                chatId,
-                `📱 Twitter:\n${state.data.generated.twitter || "N/A"}\n\n` +
-                `💼 LinkedIn:\n${state.data.generated.linkedin || "N/A"}\n\n` +
-                `Post now? (yes/no)`
-            );
         } catch (err) {
             console.error("AI ERROR:", err.message);
 
             state.data.generated = {
                 twitter: `🚀 ${text} #AI #Tech`,
-                linkedin: `${text}\n\nThis is a powerful shift in the industry.\n\n#AI #Innovation`,
+                linkedin: `${text}\n\nThis is a powerful shift.\n\n#AI #Innovation`,
+                instagram: `${text} ✨🔥 #AI #Tech`,
+                threads: `${text} – thoughts?`,
             };
-
-            state.step = "confirm";
-            await setState(chatId, state);
-
-            return bot.sendMessage(
-                chatId,
-                `⚠️ Using fallback content:\n\n` +
-                `📱 Twitter:\n${state.data.generated.twitter}\n\n` +
-                `Post now? (yes/no)`
-            );
         }
+
+        state.step = "confirm";
+        await setState(chatId, state);
+
+        let message = "";
+
+        const platforms = state.data.platforms;
+
+        if (platforms.includes("twitter")) {
+            message += `📱 Twitter:\n${state.data.generated.twitter}\n\n`;
+        }
+        if (platforms.includes("linkedin")) {
+            message += `💼 LinkedIn:\n${state.data.generated.linkedin}\n\n`;
+        }
+        if (platforms.includes("instagram")) {
+            message += `📸 Instagram:\n${state.data.generated.instagram}\n\n`;
+        }
+        if (platforms.includes("threads")) {
+            message += `🧵 Threads:\n${state.data.generated.threads}\n\n`;
+        }
+
+        message += "Confirm your action:";
+
+        return bot.sendMessage(chatId, message, {
+            reply_markup: {
+                keyboard: [
+                    ["Yes"],
+                    ["Edit", "Cancel"]
+                ],
+                resize_keyboard: true,
+                one_time_keyboard: true
+            }
+        });
     }
 
+    // ===== CONFIRM =====
     if (state.step === "confirm") {
-        if (text.toLowerCase() === "yes") {
+        if (text === "yes") {
             try {
                 await bot.sendMessage(chatId, "🚀 Publishing...");
 
-
-                // STEP 5: Confirm
-                if (state.step === "confirm") {
-                    if (text.toLowerCase() === "yes") {
-                        try {
-                            await bot.sendMessage(chatId, "🚀 Publishing...");
-
-                            const user = await userService.findOrCreateTelegramUser(msg.from);
-
-                            await postService.publishPost(user.id, state.data);
-
-                            await redis.del(`chat:${chatId}`);
-
-                            return bot.sendMessage(
-                                chatId,
-                                "✅ Post queued successfully!"
-                            );
-                        } catch (err) {
-                            console.error("PUBLISH ERROR:", err);
-
-                            return bot.sendMessage(chatId, "❌ Failed to publish");
-                        }
-                    } else {
-                        await redis.del(`chat:${chatId}`);
-                        return bot.sendMessage(chatId, "❌ Cancelled");
-                    }
-                }
+                const user = await userService.findOrCreateTelegramUser(msg.from);
+                await postService.publishPost(user.id, state.data);
 
                 await redis.del(`chat:${chatId}`);
-
-                return bot.sendMessage(
-                    chatId,
-                    "✅ Post queued successfully! Processing..."
-                );
+                return bot.sendMessage(chatId, "✅ Post queued successfully!");
             } catch (err) {
                 console.error("PUBLISH ERROR:", err);
-
                 return bot.sendMessage(chatId, "❌ Failed to publish");
             }
-        } else {
+        }
+
+        if (text === "edit") {
+            state.step = "idea";
+            await setState(chatId, state);
+            return bot.sendMessage(chatId, "✏️ Enter new idea");
+        }
+
+        if (text === "cancel") {
             await redis.del(`chat:${chatId}`);
             return bot.sendMessage(chatId, "❌ Cancelled");
         }
     }
 };
 
-
-
+// ================= STATUS =================
 exports.handleStatus = async (bot, msg) => {
-  const chatId = msg.chat.id;
+    const chatId = msg.chat.id;
 
-  try {
-    // 🔥 get user
-    const user = await userService.findOrCreateTelegramUser(msg.from);
+    try {
+        const user = await userService.findOrCreateTelegramUser(msg.from);
+        const posts = await postService.getRecentPosts(user.id);
 
-    const posts = await postService.getRecentPosts(user.id);
+        if (!posts.length) {
+            return bot.sendMessage(chatId, "No posts yet.");
+        }
 
-    if (!posts.length) {
-      return bot.sendMessage(chatId, "No posts yet.");
+        let message = "📊 Last 5 posts:\n\n";
+
+        posts.forEach((post, i) => {
+            message += `${i + 1}. ${post.idea.slice(0, 40)}\n`;
+
+            post.platform_posts.forEach((p) => {
+                let icon = "⏳";
+                if (p.status === "published") icon = "✅";
+                if (p.status === "failed") icon = "❌";
+
+                message += `   ${p.platform} → ${p.status} ${icon}\n`;
+            });
+
+            message += "\n";
+        });
+
+        return bot.sendMessage(chatId, message);
+    } catch (err) {
+        console.error(err);
+        return bot.sendMessage(chatId, "❌ Failed to fetch status");
     }
+};
 
-    let message = "📊 Last 5 posts:\n\n";
+// ================= ACCOUNTS =================
+exports.handleAccounts = async (bot, msg) => {
+    const chatId = msg.chat.id;
 
-    posts.forEach((post, index) => {
-      message += `${index + 1}. Idea: ${post.idea}\n`;
+    try {
+        const user = await userService.findOrCreateTelegramUser(msg.from);
+        const accounts = await userService.getSocialAccounts(user.id);
 
-      post.platform_posts.forEach((p) => {
-        let statusIcon = "⏳";
+        if (!accounts || accounts.length === 0) {
+            return bot.sendMessage(chatId, "No accounts connected.");
+        }
 
-        if (p.status === "published") statusIcon = "✅";
-        if (p.status === "failed") statusIcon = "❌";
+        let message = "🔗 Connected accounts:\n\n";
 
-        message += `   ${p.platform} → ${p.status} ${statusIcon}\n`;
-      });
+        accounts.forEach((acc, index) => {
+            message += `${index + 1}. ${acc.platform.toUpperCase()} (${acc.handle})\n`;
+        });
 
-      message += "\n";
-    });
+        return bot.sendMessage(chatId, message);
+    } catch (err) {
+        console.error(err);
+        return bot.sendMessage(chatId, "❌ Failed to fetch accounts");
+    }
+};
 
-    return bot.sendMessage(chatId, message);
-  } catch (err) {
-    console.error(err);
-    return bot.sendMessage(chatId, "❌ Failed to fetch status");
-  }
+// ================= CLEAR STATE =================
+exports.clearState = async (chatId) => {
+    await redis.del(`chat:${chatId}`);
 };
