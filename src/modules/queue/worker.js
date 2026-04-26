@@ -9,7 +9,13 @@ const worker = new Worker(
     console.log("Processing:", platform, content);
 
     try {
-      //  Simulate API call (replace later with real)
+      //  mark as processing
+      await prisma.platformPost.update({
+        where: { id: platformPostId },
+        data: { status: "processing" },
+      });
+
+      // simulate API call
       await new Promise((res) => setTimeout(res, 2000));
 
       await prisma.platformPost.update({
@@ -17,6 +23,7 @@ const worker = new Worker(
         data: {
           status: "published",
           published_at: new Date(),
+          error_message: null,
         },
       });
 
@@ -27,7 +34,7 @@ const worker = new Worker(
         data: {
           status: "failed",
           error_message: err.message,
-          attempts: { increment: 1 },
+          attempts: job.attemptsMade + 1,
         },
       });
 
