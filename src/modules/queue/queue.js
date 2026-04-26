@@ -1,9 +1,8 @@
 const { Queue } = require("bullmq");
+const connection = require("../../config/redis"); 
 
 const queue = new Queue("post-queue", {
-  connection: {
-    url: process.env.REDIS_URL, 
-  },
+  connection,
 });
 
 module.exports = queue;

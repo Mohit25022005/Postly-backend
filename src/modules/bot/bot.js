@@ -2,7 +2,7 @@ const TelegramBot = require("node-telegram-bot-api");
 const botService = require("./bot.service");
 
 const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, {
-    polling: true, // will switch to webhook in deployment
+    polling: process.env.NODE_ENV !== "production",
 });
 
 // ================= START =================
@@ -46,9 +46,9 @@ bot.onText(/\/accounts/, async (msg) => {
 
 // ================= HELP =================
 bot.onText(/\/help/, async (msg) => {
-  bot.sendMessage(
-    msg.chat.id,
-`📌 Available Commands:
+    bot.sendMessage(
+        msg.chat.id,
+        `📌 Available Commands:
 
 /post - create content
 /status - view recent posts
@@ -57,7 +57,7 @@ bot.onText(/\/help/, async (msg) => {
 /apikey - add your AI key 
 /cancel - cancel current flow
 /restart - restart post flow`
-  );
+    );
 });
 
 // ================= MAIN MESSAGE HANDLER =================
