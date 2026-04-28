@@ -7,11 +7,18 @@ const bot = new TelegramBot(token, {
     polling: false,
 });
 
+bot.on("polling_error", (err) => {
+    console.error("[BOT] Polling error:", err.message);
+});
+
 bot.start = async () => {
     if (process.env.NODE_ENV === "production") {
         const webhookUrl = `${process.env.BASE_URL}/bot/webhook`;
+        // Drop all pending updates so stale callbacks do not crash server startup.
+        await bot.setWebHook("");
+        await new Promise((resolve) => setTimeout(resolve, 500));
         await bot.setWebHook(webhookUrl);
-        console.log(`[BOT] Webhook mode active: ${webhookUrl}`);
+        console.log(`[BOT] Webhook set: ${webhookUrl}`);
     } else {
         bot.startPolling();
         process.once("SIGINT", () => bot.stopPolling({ reason: "SIGINT" }));

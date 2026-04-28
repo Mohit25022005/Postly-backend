@@ -1,5 +1,9 @@
 require("dotenv").config();
 
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("[UNHANDLED REJECTION]", reason?.message || reason);
+});
+
 const { execSync } = require("child_process");
 const app = require("./app");
 const bot = require("./modules/bot/bot");
@@ -23,6 +27,6 @@ app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 
   bot.start().catch((err) => {
-    console.error("Bot startup error:", err.message);
+    console.error("[BOT] Startup error (non-fatal):", err.message);
   });
 });
