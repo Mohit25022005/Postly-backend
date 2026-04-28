@@ -1,0 +1,211 @@
+{
+  "info": {
+    "name": "Postly API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:5000"
+    },
+    {
+      "key": "access_token",
+      "value": ""
+    },
+    {
+      "key": "refresh_token",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Register",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{base_url}}/api/auth/register",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"email\":\"user@example.com\",\"password\":\"password123\",\"name\":\"Postly User\"}"
+        }
+      }
+    },
+    {
+      "name": "Login",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{base_url}}/api/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"email\":\"user@example.com\",\"password\":\"password123\"}"
+        }
+      }
+    },
+    {
+      "name": "Refresh",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{base_url}}/api/auth/refresh",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"refresh_token\":\"{{refresh_token}}\"}"
+        }
+      }
+    },
+    {
+      "name": "Logout",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{access_token}}" }
+        ],
+        "url": "{{base_url}}/api/auth/logout",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"refresh_token\":\"{{refresh_token}}\"}"
+        }
+      }
+    },
+    {
+      "name": "Me",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+        "url": "{{base_url}}/api/auth/me"
+      }
+    },
+    {
+      "name": "Get Profile",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+        "url": "{{base_url}}/api/user/profile"
+      }
+    },
+    {
+      "name": "Update Profile",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{access_token}}" }
+        ],
+        "url": "{{base_url}}/api/user/profile",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"name\":\"Postly User\",\"bio\":\"AI content creator\",\"default_tone\":\"professional\",\"default_language\":\"en\"}"
+        }
+      }
+    },
+    {
+      "name": "Add Social Account",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{access_token}}" }
+        ],
+        "url": "{{base_url}}/api/user/social-accounts",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"platform\":\"twitter\",\"access_token\":\"token\",\"refresh_token\":\"secret\",\"handle\":\"@postly\"}"
+        }
+      }
+    },
+    {
+      "name": "List Social Accounts",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+        "url": "{{base_url}}/api/user/social-accounts"
+      }
+    },
+    {
+      "name": "Delete Social Account",
+      "request": {
+        "method": "DELETE",
+        "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+        "url": "{{base_url}}/api/user/social-accounts/:id"
+      }
+    },
+    {
+      "name": "Save AI Keys",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{access_token}}" }
+        ],
+        "url": "{{base_url}}/api/user/ai-keys",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"openai_key\":\"sk-openai\",\"anthropic_key\":\"sk-ant\"}"
+        }
+      }
+    },
+    {
+      "name": "Generate Content",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{access_token}}" }
+        ],
+        "url": "{{base_url}}/api/content/generate",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"idea\":\"Launch our new AI publishing workflow\",\"platforms\":[\"twitter\",\"linkedin\"],\"post_type\":\"announcement\",\"tone\":\"professional\",\"model\":\"openai\",\"language\":\"en\"}"
+        }
+      }
+    },
+    {
+      "name": "Publish Post",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{access_token}}" }
+        ],
+        "url": "{{base_url}}/api/posts/publish",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"idea\":\"Launch our new AI publishing workflow\",\"platforms\":[\"twitter\"],\"post_type\":\"announcement\",\"tone\":\"professional\",\"model\":\"openai\",\"language\":\"en\"}"
+        }
+      }
+    },
+    {
+      "name": "Schedule Post",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{access_token}}" }
+        ],
+        "url": "{{base_url}}/api/posts/schedule",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"idea\":\"Scheduled launch post\",\"platforms\":[\"twitter\"],\"post_type\":\"announcement\",\"tone\":\"professional\",\"model\":\"openai\",\"language\":\"en\",\"publish_at\":\"2030-01-01T10:00:00.000Z\",\"generated\":{\"twitter\":{\"content\":\"Scheduled launch post #AI\"}}}"
+        }
+      }
+    },
+    {
+      "name": "List Posts",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+        "url": "{{base_url}}/api/posts?page=1&limit=10"
+      }
+    },
+    {
+      "name": "Dashboard Stats",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+        "url": "{{base_url}}/api/dashboard/stats"
+      }
+    }
+  ]
+}
