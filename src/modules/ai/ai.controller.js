@@ -4,33 +4,6 @@ const { decrypt } = require("../../utils/encryption");
 
 exports.generate = async (req, res) => {
   try {
-    // Validate required fields
-    const { idea, post_type, platforms, tone, model } = req.body;
-    
-    if (!idea || idea.length < 3) {
-      return res.status(400).json({
-        data: null,
-        meta: null,
-        error: { message: "Idea is required (min 3 chars)", code: "VALIDATION_ERROR" }
-      });
-    }
-    
-    if (!post_type) {
-      return res.status(400).json({
-        data: null,
-        meta: null,
-        error: { message: "post_type is required", code: "VALIDATION_ERROR" }
-      });
-    }
-    
-    if (!platforms || !platforms.length) {
-      return res.status(400).json({
-        data: null,
-        meta: null,
-        error: { message: "platforms array is required", code: "VALIDATION_ERROR" }
-      });
-    }
-
     const userId = req.user.id;
 
     let userKeys = {};

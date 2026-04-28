@@ -1,9 +1,15 @@
 const service = require("./post.service");
 const prisma = require("../../config/db");
+const aiService = require("../ai/ai.service");
 
 exports.publish = async (req, res) => {
   try {
-    const post = await service.publishPost(req.user.id, req.body);
+    const generated = await aiService.generateContent(req.body);
+    const post = await service.publishPost(req.user.id, {
+      ...req.body,
+      generated: generated.generated,
+      model_used: generated.model_used,
+    });
     res.json({ data: post, meta: null, error: null });
   } catch (err) {
     console.error(`[publish] ${err.message}`);
