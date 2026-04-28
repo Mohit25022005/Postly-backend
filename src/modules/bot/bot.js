@@ -2,8 +2,22 @@ const TelegramBot = require("node-telegram-bot-api");
 const botService = require("./bot.service");
 
 const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, {
-    polling: process.env.NODE_ENV !== "production",
+    polling: false,
 });
+
+bot.start = async (app) => {
+    if (process.env.NODE_ENV === "production") {
+        await bot.setWebHook(`${process.env.BASE_URL}/bot/webhook`);
+        app.post("/bot/webhook", (req, res) => {
+            bot.processUpdate(req.body);
+            res.sendStatus(200);
+        });
+    } else {
+        bot.startPolling();
+        process.once("SIGINT", () => bot.stopPolling({ reason: "SIGINT" }));
+        process.once("SIGTERM", () => bot.stopPolling({ reason: "SIGTERM" }));
+    }
+};
 
 // ================= START =================
 bot.onText(/\/start/, async (msg) => {
@@ -65,6 +79,10 @@ bot.on("message", async (msg) => {
     if (msg.text?.startsWith("/")) return;
 
     await botService.handleMessage(bot, msg);
+});
+
+bot.on("callback_query", async (query) => {
+    await botService.handleCallback(bot, query);
 });
 
 bot.onText(/\/cancel/, async (msg) => {

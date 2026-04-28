@@ -1,385 +1,343 @@
-const Redis = require("ioredis");
-// const redis = new Redis();
 const redis = require("../../config/redis");
-
-const axios = require("axios");
 const userService = require("../user/user.service");
 const postService = require("../post/post.service");
+const aiService = require("../ai/ai.service");
 
-// ================= STATE =================
+const PLATFORMS = ["twitter", "linkedin", "instagram", "threads"];
+const POST_TYPES = ["announcement", "thread", "story", "promotional", "educational", "opinion"];
+const TONES = ["professional", "casual", "witty", "authoritative", "friendly"];
+const MODELS = ["openai", "anthropic"];
+const SESSION_TTL_SECONDS = 1800;
+
+const sessionKey = (chatId) => `bot:session:${chatId}`;
+
 const getState = async (chatId) => {
-    const data = await redis.get(`chat:${chatId}`);
+    const data = await redis.get(sessionKey(chatId));
     return data ? JSON.parse(data) : null;
 };
 
 const setState = async (chatId, state) => {
-    await redis.set(`chat:${chatId}`, JSON.stringify(state), "EX", 1800);
+    await redis.set(sessionKey(chatId), JSON.stringify(state), "EX", SESSION_TTL_SECONDS);
 };
 
-// ================= START =================
+const clearState = async (chatId) => {
+    await redis.del(sessionKey(chatId));
+};
+
+const sendButtonWarning = (bot, chatId) => {
+    return bot.sendMessage(chatId, "Please use the buttons to respond.");
+};
+
+const sendExpired = (bot, chatId) => {
+    return bot.sendMessage(chatId, "Session expired. Send /post to start again.");
+};
+
+const postTypeKeyboard = () => ({
+    inline_keyboard: POST_TYPES.map((type) => [
+        { text: type[0].toUpperCase() + type.slice(1), callback_data: `type:${type}` },
+    ]),
+});
+
+const platformKeyboard = (selected = []) => ({
+    inline_keyboard: [
+        ...PLATFORMS.map((platform) => [{
+            text: `${selected.includes(platform) ? "✓ " : ""}${platform[0].toUpperCase() + platform.slice(1)}`,
+            callback_data: `platform:${platform}`,
+        }]),
+        [{ text: "All", callback_data: "platform:all" }],
+        [{ text: "Done", callback_data: "platform:done" }],
+    ],
+});
+
+const toneKeyboard = () => ({
+    inline_keyboard: TONES.map((tone) => [
+        { text: tone[0].toUpperCase() + tone.slice(1), callback_data: `tone:${tone}` },
+    ]),
+});
+
+const modelKeyboard = () => ({
+    inline_keyboard: [
+        [{ text: "GPT-4o", callback_data: "model:openai" }],
+        [{ text: "Claude Sonnet", callback_data: "model:anthropic" }],
+    ],
+});
+
+const confirmKeyboard = () => ({
+    inline_keyboard: [
+        [
+            { text: "Yes ✅", callback_data: "confirm:yes" },
+            { text: "Edit ✏️", callback_data: "confirm:edit" },
+            { text: "Cancel ❌", callback_data: "confirm:cancel" },
+        ],
+    ],
+});
+
+const buildPreview = (state) => {
+    let message = "";
+
+    state.data.platforms.forEach((platform) => {
+        message += `${platform.toUpperCase()}:\n${state.data.generated?.[platform]?.content || "N/A"}\n\n`;
+    });
+
+    return `${message}Confirm your action:`;
+};
+
 exports.startPostFlow = async (bot, msg) => {
     const chatId = msg.chat.id;
 
-    await redis.del(`chat:${chatId}`);
+    await clearState(chatId);
     await setState(chatId, { step: "type", data: {} });
 
-    return bot.sendMessage(chatId, "Hey 👋 What type of post is this?", {
-        reply_markup: {
-            keyboard: [
-                ["Announcement", "Thread"],
-                ["Story", "Promotional"],
-                ["Educational", "Opinion"],
-            ],
-            resize_keyboard: true,
-            one_time_keyboard: true,
-        },
+    return bot.sendMessage(chatId, "What type of post is this?", {
+        reply_markup: postTypeKeyboard(),
     });
 };
 
-// ================= HANDLE FLOW =================
-exports.handleMessage = async (bot, msg) => {
-    const chatId = msg.chat.id;
-    const text = msg.text?.toLowerCase();
-
+exports.handleCallback = async (bot, query) => {
+    const chatId = query.message.chat.id;
+    const [action, value] = query.data.split(":");
     const state = await getState(chatId);
-    if (!state) return;
-    // ===== CONNECT PLATFORM =====
-    if (state.step === "connect_platform") {
-        const platform = text.toLowerCase();
 
-        const validPlatforms = ["twitter", "linkedin", "instagram", "threads"];
+    await bot.answerCallbackQuery(query.id);
 
-        if (!validPlatforms.includes(platform)) {
-            return bot.sendMessage(
-                chatId,
-                "❌ Invalid platform. Choose Twitter, LinkedIn, Instagram, or Threads"
-            );
-        }
-
-        try {
-            const user = await userService.findOrCreateTelegramUser(msg.from);
-
-            // ===== REAL TWITTER FLOW =====
-            if (platform === "twitter") {
-                const url = `${process.env.RENDER_EXTERNAL_URL}/api/auth/twitter/login?user_id=${user.id}`;
-
-                await redis.del(`chat:${chatId}`);
-
-                return bot.sendMessage(
-                    chatId,
-                    `🐦 Connect your Twitter account:\n\n${url}\n\nAfter connecting, come back and use /accounts`,
-                    { reply_markup: { remove_keyboard: true } }
-                );
-            }
-
-            // ===== OTHER PLATFORMS (NOT IMPLEMENTED) =====
-            if (["linkedin", "instagram", "threads"].includes(platform)) {
-                await redis.del(`chat:${chatId}`);
-
-                return bot.sendMessage(
-                    chatId,
-                    "🚧 This platform is not integrated yet.\nCurrently only Twitter is supported.",
-                    { reply_markup: { remove_keyboard: true } }
-                );
-            }
-
-        } catch (err) {
-            console.error(err);
-            return bot.sendMessage(chatId, "❌ Failed to connect account");
-        }
-    }
-    // ===== API KEY TYPE =====
-    if (state.step === "api_key_type") {
-        if (!["openai", "anthropic"].includes(text)) {
-            return bot.sendMessage(chatId, "❌ Choose OpenAI or Anthropic");
-        }
-
-        state.data.key_type = text;
-        state.step = "api_key_value";
-        await setState(chatId, state);
-
-        return bot.sendMessage(chatId, `Paste your ${text.toUpperCase()} API key:`);
+    if (!state) {
+        return sendExpired(bot, chatId);
     }
 
-    // ===== API KEY VALUE =====
-    if (state.step === "api_key_value") {
-        const user = await userService.findOrCreateTelegramUser(msg.from);
-
-        try {
-            const payload =
-                state.data.key_type === "openai"
-                    ? { openai_key: text }
-                    : { anthropic_key: text };
-
-            await userService.saveAIKeys(user.id, payload);
-
-            await redis.del(`chat:${chatId}`);
-
-            return bot.sendMessage(chatId, "✅ API key saved successfully!");
-        } catch (err) {
-            console.error(err);
-            return bot.sendMessage(chatId, "❌ Failed to save key");
-        }
+    if (state.step !== action) {
+        return sendButtonWarning(bot, chatId);
     }
-    // ===== TYPE =====
-    if (state.step === "type") {
-        const validTypes = [
-            "announcement",
-            "thread",
-            "story",
-            "promotional",
-            "educational",
-            "opinion",
-        ];
 
-        if (!validTypes.includes(text)) {
-            return bot.sendMessage(
-                chatId,
-                "❌ Invalid type.\nChoose: Announcement | Thread | Story | Promotional | Educational | Opinion"
-            );
-        }
+    if (action === "type") {
+        if (!POST_TYPES.includes(value)) return sendButtonWarning(bot, chatId);
 
-        state.data.post_type = text;
+        state.data.post_type = value;
         state.step = "platform";
+        state.data.platforms = [];
         await setState(chatId, state);
 
         return bot.sendMessage(chatId, "Which platforms?", {
-            reply_markup: {
-                keyboard: [
-                    ["Twitter", "LinkedIn"],
-                    ["Instagram", "Threads"],
-                    ["All"],
-                ],
-                resize_keyboard: true,
-                one_time_keyboard: true,
-            },
+            reply_markup: platformKeyboard(state.data.platforms),
         });
     }
 
-    // ===== PLATFORM =====
-    if (state.step === "platform") {
-        const validPlatforms = [
-            "twitter",
-            "linkedin",
-            "instagram",
-            "threads",
-            "all",
-        ];
+    if (action === "platform") {
+        if (value === "all") {
+            state.data.platforms = [...PLATFORMS];
+        } else if (value === "done") {
+            if (!state.data.platforms?.length) {
+                return bot.sendMessage(chatId, "Choose at least one platform.");
+            }
 
-        if (!validPlatforms.includes(text)) {
-            return bot.sendMessage(
-                chatId,
-                "❌ Invalid platform.\nChoose: Twitter | LinkedIn | Instagram | Threads | All"
-            );
+            state.step = "tone";
+            await setState(chatId, state);
+            return bot.sendMessage(chatId, "Choose tone:", {
+                reply_markup: toneKeyboard(),
+            });
+        } else if (PLATFORMS.includes(value)) {
+            const selected = new Set(state.data.platforms || []);
+            selected.has(value) ? selected.delete(value) : selected.add(value);
+            state.data.platforms = [...selected];
+        } else {
+            return sendButtonWarning(bot, chatId);
         }
 
-        state.data.platforms =
-            text === "all"
-                ? ["twitter", "linkedin", "instagram", "threads"]
-                : [text];
-
-        state.step = "tone";
         await setState(chatId, state);
-
-        return bot.sendMessage(chatId, "Choose tone:", {
-            reply_markup: {
-                keyboard: [
-                    ["Professional", "Casual"],
-                    ["Witty", "Authoritative"],
-                    ["Friendly"],
-                ],
-                resize_keyboard: true,
-                one_time_keyboard: true,
-            },
+        return bot.editMessageReplyMarkup(platformKeyboard(state.data.platforms), {
+            chat_id: chatId,
+            message_id: query.message.message_id,
         });
     }
 
-    // ===== TONE =====
-    if (state.step === "tone") {
-        const validTones = [
-            "professional",
-            "casual",
-            "witty",
-            "authoritative",
-            "friendly",
-        ];
+    if (action === "tone") {
+        if (!TONES.includes(value)) return sendButtonWarning(bot, chatId);
 
-        if (!validTones.includes(text)) {
-            return bot.sendMessage(
-                chatId,
-                "❌ Invalid tone.\nChoose: Professional | Casual | Witty | Authoritative | Friendly"
-            );
-        }
-
-        state.data.tone = text;
+        state.data.tone = value;
         state.step = "model";
         await setState(chatId, state);
 
         return bot.sendMessage(chatId, "Which AI model?", {
-            reply_markup: {
-                keyboard: [["GPT-4o"], ["Claude Sonnet"]],
-                resize_keyboard: true,
-                one_time_keyboard: true,
-            },
+            reply_markup: modelKeyboard(),
         });
     }
 
-    // ===== MODEL =====
-    if (state.step === "model") {
-        if (!text.includes("gpt") && !text.includes("claude")) {
-            return bot.sendMessage(
-                chatId,
-                "❌ Invalid model.\nChoose: GPT-4o or Claude Sonnet"
-            );
-        }
+    if (action === "model") {
+        if (!MODELS.includes(value)) return sendButtonWarning(bot, chatId);
 
-        state.data.model = text.includes("claude") ? "anthropic" : "openai";
+        state.data.model = value;
         state.step = "idea";
         await setState(chatId, state);
 
         return bot.sendMessage(chatId, "Tell me the idea (max 500 chars)");
     }
 
-    // ===== IDEA =====
+    if (action === "confirm") {
+        if (value === "edit") {
+            state.step = "idea";
+            await setState(chatId, state);
+            return bot.sendMessage(chatId, "Enter the revised idea (max 500 chars)");
+        }
+
+        if (value === "cancel") {
+            await clearState(chatId);
+            return bot.sendMessage(chatId, "Cancelled.");
+        }
+
+        if (value !== "yes") return sendButtonWarning(bot, chatId);
+
+        try {
+            const user = await userService.findOrCreateTelegramUser(query.from);
+            await postService.publishPost(user.id, state.data);
+            await clearState(chatId);
+
+            const status = state.data.platforms
+                .map((platform) => `${platform}: queued`)
+                .join("\n");
+
+            return bot.sendMessage(chatId, `Publish jobs queued:\n${status}`);
+        } catch (err) {
+            console.error("PUBLISH ERROR:", err.message);
+            return bot.sendMessage(chatId, "Failed to publish.");
+        }
+    }
+
+    return sendButtonWarning(bot, chatId);
+};
+
+exports.handleMessage = async (bot, msg) => {
+    const chatId = msg.chat.id;
+    const text = msg.text || "";
+    const state = await getState(chatId);
+
+    if (!state) return sendExpired(bot, chatId);
+
+    if (["type", "platform", "tone", "model", "confirm"].includes(state.step)) {
+        return sendButtonWarning(bot, chatId);
+    }
+
+    if (state.step === "connect_platform") {
+        const platform = text.toLowerCase();
+
+        if (!PLATFORMS.includes(platform)) {
+            return bot.sendMessage(chatId, "Invalid platform. Choose Twitter, LinkedIn, Instagram, or Threads");
+        }
+
+        try {
+            const user = await userService.findOrCreateTelegramUser(msg.from);
+
+            if (platform === "twitter") {
+                const baseUrl = process.env.BASE_URL || process.env.RENDER_EXTERNAL_URL;
+                const url = `${baseUrl}/api/auth/twitter/login?user_id=${user.id}`;
+
+                await clearState(chatId);
+                return bot.sendMessage(chatId, `Connect your Twitter account:\n\n${url}\n\nAfter connecting, come back and use /accounts`, {
+                    reply_markup: { remove_keyboard: true },
+                });
+            }
+
+            await clearState(chatId);
+            return bot.sendMessage(chatId, "This platform is not integrated yet. Currently only Twitter is supported.", {
+                reply_markup: { remove_keyboard: true },
+            });
+        } catch (err) {
+            console.error("CONNECT ERROR:", err.message);
+            return bot.sendMessage(chatId, "Failed to connect account");
+        }
+    }
+
+    if (state.step === "api_key_type") {
+        const keyType = text.toLowerCase();
+        if (!MODELS.includes(keyType)) {
+            return bot.sendMessage(chatId, "Choose OpenAI or Anthropic");
+        }
+
+        state.data.key_type = keyType;
+        state.step = "api_key_value";
+        await setState(chatId, state);
+
+        return bot.sendMessage(chatId, `Paste your ${keyType.toUpperCase()} API key:`);
+    }
+
+    if (state.step === "api_key_value") {
+        const user = await userService.findOrCreateTelegramUser(msg.from);
+
+        try {
+            const payload = state.data.key_type === "openai"
+                ? { openai_key: text }
+                : { anthropic_key: text };
+
+            await userService.saveAIKeys(user.id, payload);
+            await clearState(chatId);
+
+            return bot.sendMessage(chatId, "API key saved successfully!");
+        } catch (err) {
+            console.error("API KEY ERROR:", err.message);
+            return bot.sendMessage(chatId, "Failed to save key");
+        }
+    }
+
     if (state.step === "idea") {
-        if (!text || text.length < 3) {
-            return bot.sendMessage(chatId, "❌ Idea too short.");
+        if (!text.trim()) {
+            return bot.sendMessage(chatId, "Idea is required.");
         }
 
         if (text.length > 500) {
-            return bot.sendMessage(chatId, "❌ Idea too long (max 500 chars)");
+            return bot.sendMessage(chatId, "Idea is too long. Max 500 chars.");
         }
-
-        state.data.idea = text;
 
         try {
-            await bot.sendMessage(chatId, "⚙️ Generating content...");
-
             const user = await userService.findOrCreateTelegramUser(msg.from);
+            state.data.idea = text;
+            state.data.language = state.data.language || "en";
 
-            const response = await axios.post(
-                "http://localhost:5000/api/content/generate",
-                {
-                    ...state.data,
-                    user_id: user.id,
-                }
-            );
+            await bot.sendMessage(chatId, "Generating content...");
+            const result = await aiService.generateContent(state.data, user.id);
 
-            state.data.generated = response.data.generated;
+            state.data.generated = result.generated;
+            state.data.model_used = result.model_used;
+            state.step = "confirm";
+            await setState(chatId, state);
 
+            return bot.sendMessage(chatId, buildPreview(state), {
+                reply_markup: confirmKeyboard(),
+            });
         } catch (err) {
             console.error("AI ERROR:", err.message);
-
-
-            state.data.generated = {
-                twitter: { content: `🚀 ${text} #AI #Tech` },
-                linkedin: { content: `${text}\n\nThis is a powerful shift.\n\n#AI #Innovation` },
-                instagram: { content: `${text} ✨🔥 #AI #Tech` },
-                threads: { content: `${text} – thoughts?` },
-            };
-        }
-
-        state.step = "confirm";
-        await setState(chatId, state);
-
-        let message = "";
-        const platforms = state.data.platforms;
-        const generated = state.data.generated || {};
-
-
-        if (platforms.includes("twitter")) {
-            message += `📱 Twitter:\n${generated.twitter?.content || "N/A"}\n\n`;
-        }
-        if (platforms.includes("linkedin")) {
-            message += `💼 LinkedIn:\n${generated.linkedin?.content || "N/A"}\n\n`;
-        }
-        if (platforms.includes("instagram")) {
-            message += `📸 Instagram:\n${generated.instagram?.content || "N/A"}\n\n`;
-        }
-        if (platforms.includes("threads")) {
-            message += `🧵 Threads:\n${generated.threads?.content || "N/A"}\n\n`;
-        }
-
-        message += "Confirm your action:";
-
-        return bot.sendMessage(chatId, message, {
-            reply_markup: {
-                keyboard: [
-                    ["Yes"],
-                    ["Edit", "Cancel"]
-                ],
-                resize_keyboard: true,
-                one_time_keyboard: true
-            }
-        });
-    }
-
-    // ===== CONFIRM =====
-    if (state.step === "confirm") {
-        if (text === "yes") {
-            try {
-                await bot.sendMessage(chatId, "🚀 Publishing...");
-
-                const user = await userService.findOrCreateTelegramUser(msg.from);
-                await postService.publishPost(user.id, state.data);
-
-                await redis.del(`chat:${chatId}`);
-                return bot.sendMessage(chatId, "✅ Post queued successfully!");
-            } catch (err) {
-                console.error("PUBLISH ERROR:", err);
-                return bot.sendMessage(chatId, "❌ Failed to publish");
-            }
-        }
-
-        if (text === "edit") {
-            state.step = "idea";
-            await setState(chatId, state);
-            return bot.sendMessage(chatId, "✏️ Enter new idea");
-        }
-
-        if (text === "cancel") {
-            await redis.del(`chat:${chatId}`);
-            return bot.sendMessage(chatId, "❌ Cancelled");
+            return bot.sendMessage(chatId, "Failed to generate content.");
         }
     }
+
+    return sendButtonWarning(bot, chatId);
 };
 
-// ================= STATUS =================
 exports.handleStatus = async (bot, msg) => {
     const chatId = msg.chat.id;
 
     try {
         const user = await userService.findOrCreateTelegramUser(msg.from);
-        const posts = await postService.getRecentPosts(user.id);
+        const posts = await postService.getRecentPosts(user.id, 1, 5);
 
         if (!posts.length) {
             return bot.sendMessage(chatId, "No posts yet.");
         }
 
-        let message = "📊 Last 5 posts:\n\n";
+        let message = "Last 5 posts:\n\n";
 
-        posts.forEach((post, i) => {
-            message += `${i + 1}. ${post.idea.slice(0, 40)}\n`;
-
-            post.platform_posts.forEach((p) => {
-                let icon = "⏳";
-                if (p.status === "published") icon = "✅";
-                if (p.status === "failed") icon = "❌";
-
-                message += `   ${p.platform} → ${p.status} ${icon}\n`;
+        posts.forEach((post, index) => {
+            message += `${index + 1}. ${post.idea.slice(0, 40)}\n`;
+            post.platform_posts.forEach((platformPost) => {
+                message += `   ${platformPost.platform}: ${platformPost.status}\n`;
             });
-
             message += "\n";
         });
 
         return bot.sendMessage(chatId, message);
     } catch (err) {
-        console.error(err);
-        return bot.sendMessage(chatId, "❌ Failed to fetch status");
+        console.error("STATUS ERROR:", err.message);
+        return bot.sendMessage(chatId, "Failed to fetch status");
     }
 };
 
-// ================= ACCOUNTS =================
 exports.handleAccounts = async (bot, msg) => {
     const chatId = msg.chat.id;
 
@@ -387,72 +345,49 @@ exports.handleAccounts = async (bot, msg) => {
         const user = await userService.findOrCreateTelegramUser(msg.from);
         const accounts = await userService.getSocialAccounts(user.id);
 
-        if (!accounts || accounts.length === 0) {
-            return bot.sendMessage(
-                chatId,
-                "No accounts connected.\n\nUse /connect to add one."
-            );
+        if (!accounts?.length) {
+            return bot.sendMessage(chatId, "No accounts connected.\n\nUse /connect to add one.");
         }
 
-        let message = "🔗 Connected accounts:\n\n";
+        const message = accounts
+            .map((account, index) => `${index + 1}. ${account.platform.toUpperCase()} (${account.handle || "connected"})`)
+            .join("\n");
 
-        accounts.forEach((acc, index) => {
-            message += `${index + 1}. ${acc.platform.toUpperCase()} (${acc.handle})\n`;
-        });
-
-        return bot.sendMessage(chatId, message);
+        return bot.sendMessage(chatId, `Connected accounts:\n\n${message}`);
     } catch (err) {
-        console.error(err);
-        return bot.sendMessage(chatId, "❌ Failed to fetch accounts");
+        console.error("ACCOUNTS ERROR:", err.message);
+        return bot.sendMessage(chatId, "Failed to fetch accounts");
     }
 };
 
 exports.handleConnect = async (bot, msg) => {
     const chatId = msg.chat.id;
 
-    await redis.del(`chat:${chatId}`);
+    await clearState(chatId);
     await setState(chatId, { step: "connect_platform", data: {} });
 
-    return bot.sendMessage(
-        chatId,
-        "🔗 Choose platform to connect:",
-        {
-            reply_markup: {
-                keyboard: [
-                    ["Twitter"],
-                    ["LinkedIn", "Instagram", "Threads"]
-                ],
-                resize_keyboard: true,
-                one_time_keyboard: true
-            }
-        }
-    );
+    return bot.sendMessage(chatId, "Choose platform to connect:", {
+        reply_markup: {
+            keyboard: [["Twitter"], ["LinkedIn", "Instagram", "Threads"]],
+            resize_keyboard: true,
+            one_time_keyboard: true,
+        },
+    });
 };
 
 exports.handleApiKey = async (bot, msg) => {
     const chatId = msg.chat.id;
 
-    await redis.del(`chat:${chatId}`);
+    await clearState(chatId);
     await setState(chatId, { step: "api_key_type", data: {} });
 
-    return bot.sendMessage(
-        chatId,
-        "🔑 Which API key do you want to add?",
-        {
-            reply_markup: {
-                keyboard: [
-                    ["OpenAI"],
-                    ["Anthropic"]
-                ],
-                resize_keyboard: true,
-                one_time_keyboard: true
-            }
-        }
-    );
+    return bot.sendMessage(chatId, "Which API key do you want to add?", {
+        reply_markup: {
+            keyboard: [["OpenAI"], ["Anthropic"]],
+            resize_keyboard: true,
+            one_time_keyboard: true,
+        },
+    });
 };
 
-
-// ================= CLEAR STATE =================
-exports.clearState = async (chatId) => {
-    await redis.del(`chat:${chatId}`);
-};
+exports.clearState = clearState;
