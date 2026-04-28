@@ -5,17 +5,20 @@ const { decrypt } = require("../../utils/encryption");
 const { publishToTwitter } = require("../../publishers/twitter.publisher");
 
 const worker = new Worker(
-  "publish",
+  "publish-queue",
   async (job) => {
     const { platformPostId, platform, userId, content } = job.data;
 
-    console.log("Processing:", platform, content);
+    console.log("Processing:", platform);
 
     try {
       // ================= SET PROCESSING =================
       await prisma.platformPost.update({
         where: { id: platformPostId },
-        data: { status: "processing" },
+        data: {
+          status: "processing",
+          attempts: { increment: 1 },
+        },
       });
 
       // ================= TWITTER POST =================
@@ -62,14 +65,18 @@ const worker = new Worker(
     } catch (err) {
       console.error("PUBLISH ERROR:", err.message);
 
-      await prisma.platformPost.update({
-        where: { id: platformPostId },
-        data: {
-          status: "failed",
-          error_message: err.message,
-          attempts: job.attemptsMade + 1,
-        },
-      });
+      const maxAttempts = job.opts.attempts || 3;
+      const nextAttempt = job.attemptsMade + 1;
+
+      if (nextAttempt >= maxAttempts) {
+        await prisma.platformPost.update({
+          where: { id: platformPostId },
+          data: {
+            status: "failed",
+            error_message: err.message,
+          },
+        });
+      }
 
       throw err;
     }

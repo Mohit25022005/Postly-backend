@@ -2,7 +2,7 @@
 const { Queue } = require("bullmq");
 const redis = require("../../config/redis");
 
-const queue = new Queue("publish", {
+const queue = new Queue("publish-queue", {
   connection: redis, 
 });
 
