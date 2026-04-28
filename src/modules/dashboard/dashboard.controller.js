@@ -24,13 +24,21 @@ exports.getStats = async (req, res) => {
       },
     });
 
+    // failed posts
+    const failedPosts = await prisma.platformPost.count({
+      where: {
+        status: "failed",
+        post: { user_id: userId },
+      },
+    });
+
     const successRate =
       totalPlatformPosts === 0
         ? 0
         : ((successful / totalPlatformPosts) * 100).toFixed(2);
 
     // posts per platform
-    const perPlatform = await prisma.platformPost.groupBy({
+    const perPlatformRaw = await prisma.platformPost.groupBy({
       by: ["platform"],
       where: {
         post: { user_id: userId },
@@ -38,14 +46,40 @@ exports.getStats = async (req, res) => {
       _count: true,
     });
 
+    // Transform to object format
+    const postsPerPlatform = {};
+    perPlatformRaw.forEach(p => {
+      postsPerPlatform[p.platform] = p._count;
+    });
+
+    // posts this week
+    const weekAgo = new Date();
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    
+    const postsThisWeek = await prisma.post.count({
+      where: {
+        user_id: userId,
+        created_at: { gte: weekAgo },
+      },
+    });
+
     return res.json({
       data: {
         total_posts: totalPosts,
         success_rate: Number(successRate),
-        posts_per_platform: perPlatform,
+        posts_per_platform: postsPerPlatform,
+        posts_this_week: postsThisWeek,
+        failed_posts: failedPosts,
       },
+      meta: null,
+      error: null,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(`[getStats] ${err.message}`);
+    res.status(500).json({
+      data: null,
+      meta: null,
+      error: { message: err.message, code: "INTERNAL_ERROR" },
+    });
   }
 };

@@ -2,31 +2,61 @@
 const userService = require("./user.service");
 
 exports.getProfile = async (req, res) => {
-  const user = await userService.getProfile(req.user.id);
-  res.json({ data: user });
+  try {
+    const user = await userService.getProfile(req.user.id);
+    res.json({ data: user, meta: null, error: null });
+  } catch (err) {
+    console.error(`[getProfile] ${err.message}`);
+    res.status(500).json({ data: null, meta: null, error: { message: err.message } });
+  }
 };
 
 exports.updateProfile = async (req, res) => {
-  const user = await userService.updateProfile(req.user.id, req.body);
-  res.json({ data: user });
+  try {
+    const user = await userService.updateProfile(req.user.id, req.body);
+    res.json({ data: user, meta: null, error: null });
+  } catch (err) {
+    console.error(`[updateProfile] ${err.message}`);
+    res.status(500).json({ data: null, meta: null, error: { message: err.message } });
+  }
 };
 
 exports.addSocial = async (req, res) => {
-  const acc = await userService.addSocialAccount(req.user.id, req.body);
-  res.json({ data: acc });
+  try {
+    const acc = await userService.addSocialAccount(req.user.id, req.body);
+    res.json({ data: acc, meta: null, error: null });
+  } catch (err) {
+    console.error(`[addSocial] ${err.message}`);
+    res.status(500).json({ data: null, meta: null, error: { message: err.message } });
+  }
 };
 
 exports.getSocial = async (req, res) => {
-  const accs = await userService.getSocialAccounts(req.user.id);
-  res.json({ data: accs });
+  try {
+    const accs = await userService.getSocialAccounts(req.user.id);
+    res.json({ data: accs, meta: null, error: null });
+  } catch (err) {
+    console.error(`[getSocial] ${err.message}`);
+    res.status(500).json({ data: null, meta: null, error: { message: err.message } });
+  }
 };
 
 exports.deleteSocial = async (req, res) => {
-  await userService.deleteSocialAccount(req.user.id, req.params.id);
-  res.json({ message: "Deleted" });
+  try {
+    await userService.deleteSocialAccount(req.user.id, req.params.id);
+    res.json({ data: { message: "Deleted" }, meta: null, error: null });
+  } catch (err) {
+    console.error(`[deleteSocial] ${err.message}`);
+    res.status(500).json({ data: null, meta: null, error: { message: err.message } });
+  }
 };
 
 exports.saveAIKeys = async (req, res) => {
-  const keys = await userService.saveAIKeys(req.user.id, req.body);
-  res.json({ data: keys });
+  try {
+    const keys = await userService.saveAIKeys(req.user.id, req.body);
+    res.json({ data: keys, meta: null, error: null });
+  } catch (err) {
+    console.error(`[saveAIKeys] ${err.message}`);
+    res.status(500).json({ data: null, meta: null, error: { message: err.message } });
+  }
 };
