@@ -1,13 +1,13 @@
 const { Worker } = require("bullmq");
 const prisma = require("../../config/db");
 const redis = require("../../config/redis");
-const { TwitterApi } = require("twitter-api-v2");
 const { decrypt } = require("../../utils/encryption");
+const { publishToTwitter } = require("../../publishers/twitter.publisher");
 
 const worker = new Worker(
-  "post-queue",
+  "publish",
   async (job) => {
-    const { platformPostId, platform, content } = job.data;
+    const { platformPostId, platform, userId, content } = job.data;
 
     console.log("Processing:", platform, content);
 
@@ -18,37 +18,34 @@ const worker = new Worker(
         data: { status: "processing" },
       });
 
-      // ================= FETCH PLATFORM POST =================
-      const platformPost = await prisma.platformPost.findUnique({
-        where: { id: platformPostId },
-        include: {
-          post: {
-            include: {
-              user: true,
-            },
-          },
-        },
-      });
-
-      // ================= FETCH USER ACCOUNT =================
-      const account = await prisma.socialAccount.findFirst({
-        where: {
-          user_id: platformPost.post.user_id,
-          platform: platform,
-        },
-      });
-
-      if (!account) {
-        throw new Error("No connected account found");
-      }
-
       // ================= TWITTER POST =================
       if (platform === "twitter") {
+        const account = await prisma.socialAccount.findFirst({
+          where: {
+            user_id: userId,
+            platform: "twitter",
+          },
+        });
+
+        if (!account) {
+          throw new Error("No connected Twitter account found");
+        }
+
         const accessToken = decrypt(account.access_token_enc);
+        const accessSecret = decrypt(account.refresh_token_enc);
 
-        const client = new TwitterApi(accessToken);
-
-        await client.v2.tweet(content);
+        await publishToTwitter(content, accessToken, accessSecret);
+      } else {
+        console.log(`Publisher not implemented: ${platform}`);
+        await prisma.platformPost.update({
+          where: { id: platformPostId },
+          data: {
+            status: "failed",
+            error_message: "Publisher not implemented",
+            attempts: 3,
+          },
+        });
+        return;
       }
 
       // ================= SUCCESS =================
