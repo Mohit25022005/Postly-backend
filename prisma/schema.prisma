@@ -8,69 +8,82 @@ datasource db {
 }
 
 model User {
-  id              String   @id @default(uuid())
-  email           String   @unique
-  password_hash   String
-  name            String
-  bio             String?
-  default_tone    String?  @default("professional")
-  default_language String? @default("en")
-  created_at      DateTime @default(now())
+  id               String          @id @default(uuid())
+  email            String          @unique
+  password_hash    String
+  name             String
+  bio              String?
+  default_tone     String?         @default("professional")
+  default_language String?         @default("en")
+  created_at       DateTime        @default(now())
+  telegram_id      String?         @unique
+  ai_keys          AIKey?
+  posts            Post[]
+  social_accounts  SocialAccount[]
 
-  social_accounts SocialAccount[]
-  posts           Post[]
-  ai_keys         AIKey?
-  refresh_token   String?
-  telegram_id     String?  @unique
+  @@index([email])
 }
 
 model SocialAccount {
-  id                 String   @id @default(uuid())
-  user_id            String
-  platform           String
-  access_token_enc   String
-  refresh_token_enc  String?
-  handle             String?
-  connected_at       DateTime @default(now())
+  id                String   @id @default(uuid())
+  user_id           String
+  platform          String
+  access_token_enc  String
+  refresh_token_enc String?
+  handle            String?
+  connected_at      DateTime @default(now())
+  user              User     @relation(fields: [user_id], references: [id])
 
-  user User @relation(fields: [user_id], references: [id])
+  @@unique([user_id, platform])
 }
 
 model AIKey {
-  id               String   @id @default(uuid())
-  user_id          String   @unique
-  openai_key_enc   String?
+  id                String   @id @default(uuid())
+  user_id           String   @unique
+  openai_key_enc    String?
   anthropic_key_enc String?
-  updated_at       DateTime @updatedAt
-
-  user User @relation(fields: [user_id], references: [id])
+  updated_at        DateTime @updatedAt
+  user              User     @relation(fields: [user_id], references: [id])
 }
 
 model Post {
-  id         String   @id @default(uuid())
-  user_id    String
-  idea       String
-  post_type  String
-  tone       String
-  language   String
-  model_used String?
-  created_at DateTime @default(now())
-  publish_at DateTime?
-  status     String   @default("queued")
-
-  user User @relation(fields: [user_id], references: [id])
+  id             String         @id @default(uuid())
+  user_id        String
+  idea           String
+  post_type      String
+  tone           String
+  language       String
+  model_used     String?
+  created_at     DateTime       @default(now())
+  publish_at     DateTime?
+  status         String         @default("queued")
   platform_posts PlatformPost[]
+  user           User           @relation(fields: [user_id], references: [id])
+
+  @@index([user_id, status])
 }
 
 model PlatformPost {
-  id            String   @id @default(uuid())
+  id            String    @id @default(uuid())
   post_id       String
   platform      String
   content       String
-  status        String   @default("queued")
+  status        String    @default("queued")
   published_at  DateTime?
   error_message String?
-  attempts      Int      @default(0)
+  attempts      Int       @default(0)
+  post          Post      @relation(fields: [post_id], references: [id])
 
-  post Post @relation(fields: [post_id], references: [id])
+  @@index([post_id])
+}
+
+model RefreshToken {
+  id         String    @id @default(uuid())
+  user_id    String
+  token_hash String    @unique
+  expires_at DateTime
+  revoked    Boolean   @default(false)
+  created_at DateTime  @default(now())
+
+  @@index([user_id])
 }

@@ -38,10 +38,11 @@ exports.publishPost = async (userId, data) => {
     await queue.add(
       "publish",
       {
+        postId: post.id,
         platformPostId: platformPost.id,
         platform,
         content: platformPost.content,
-        userId, 
+        userId,
       },
       {
         attempts: 3,
@@ -128,10 +129,11 @@ exports.retryPost = async (userId, postId) => {
     await queue.add(
       "publish",
       {
+        postId: postId,
         platformPostId: p.id,
         platform: p.platform,
         content: p.content,
-        userId, 
+        userId,
       },
       {
         attempts: 3,
@@ -190,10 +192,11 @@ exports.schedulePost = async (userId, data) => {
     await queue.add(
       "publish",
       {
+        postId: post.id,
         platformPostId: platformPost.id,
         platform,
         content: platformPost.content,
-        userId, 
+        userId,
       },
       {
         delay,
@@ -229,10 +232,15 @@ exports.cancelPost = async (userId, postId) => {
 
   if (!post) throw new Error("Post not found");
 
+  if (post.status !== "queued") {
+    const err = new Error("Only queued posts can be cancelled");
+    err.status = 409;
+    throw err;
+  }
+
   let cancelledCount = 0;
 
   for (const p of post.platform_posts) {
-    if (p.status === "published") continue;
 
     await prisma.platformPost.update({
       where: { id: p.id },

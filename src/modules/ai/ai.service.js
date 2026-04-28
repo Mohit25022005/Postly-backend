@@ -13,19 +13,29 @@ const getAnthropic = (key) =>
   });
 
 // ================= PROMPT =================
-const buildPrompt = ({ idea, post_type, tone, platforms, language }) => {
+const buildPrompt = ({ idea, post_type, tone, platforms, language = "en" }) => {
+  const languageMap = {
+    en: "English",
+    es: "Spanish",
+    fr: "French",
+    de: "German",
+    pt: "Portuguese",
+    it: "Italian",
+  };
+  const langName = languageMap[language] || "English";
+
   return `
-Generate STRICT social media content.
+Generate STRICT social media content in ${langName}.
 
 INPUT:
 - Idea: ${idea}
 - Post Type: ${post_type}
 - Tone: ${tone}
-- Language: ${language}
+- Language: ${langName}
 - Platforms: ${platforms.join(", ")}
 
 RULES (STRICT):
-- Twitter: max 280 chars, 2–3 hashtags, punchy
+- Twitter: max 280 chars, 2–3 hashtags, punchy opener
 - LinkedIn: 800–1300 chars, ALWAYS professional tone, 3–5 hashtags
 - Instagram: caption + 10–15 hashtags, emoji-friendly
 - Threads: max 500 chars, conversational
@@ -111,13 +121,15 @@ exports.generateContent = async (input, userKeys = {}) => {
     let raw;
     let model_used = "";
     let tokens_used = 0;
-
+    if (!["openai", "anthropic"].includes(input.model)) {
+      throw new Error("Invalid model. Use 'openai' or 'anthropic'");
+    }
     // ===== OPENAI =====
     if (input.model === "openai") {
       const openai = getOpenAI(userKeys.openai_key);
 
       const response = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
+        model: "gpt-4o",
         messages: [
           {
             role: "system",
@@ -129,7 +141,7 @@ exports.generateContent = async (input, userKeys = {}) => {
       });
 
       raw = response.choices[0].message.content;
-      model_used = "gpt-4o-mini";
+      model_used = "gpt-4o";
       tokens_used = response.usage?.total_tokens || 0;
     }
 
@@ -138,13 +150,15 @@ exports.generateContent = async (input, userKeys = {}) => {
       const anthropic = getAnthropic(userKeys.anthropic_key);
 
       const response = await anthropic.messages.create({
-        model: "claude-3-haiku-20240307",
-        max_tokens: 1000,
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 2000,
+        system: "You strictly follow platform constraints and output JSON only.",
         messages: [{ role: "user", content: prompt }],
       });
 
       raw = response.content[0].text;
-      model_used = "claude-3-haiku";
+      model_used = "claude-sonnet-4-20250514";
+      tokens_used = response.usage?.input_tokens + response.usage?.output_tokens || 0;
     }
 
     let parsed;
@@ -158,10 +172,11 @@ exports.generateContent = async (input, userKeys = {}) => {
     parsed = enforceRules(parsed);
 
     const filtered = {};
-    input.platforms.forEach((p) => {
+    const normalizedPlatforms = input.platforms.map(p => p.toLowerCase());
+
+    normalizedPlatforms.forEach((p) => {
       if (parsed[p]) filtered[p] = parsed[p];
     });
-
     const generated = addMetadata(filtered);
 
     return {
@@ -189,9 +204,12 @@ exports.generateContent = async (input, userKeys = {}) => {
     };
 
     const filtered = {};
-    input.platforms.forEach((p) => {
+    const normalizedPlatforms = input.platforms.map(p => p.toLowerCase());
+
+    normalizedPlatforms.forEach((p) => {
       if (fallback[p]) filtered[p] = fallback[p];
     });
+
 
     return {
       generated: addMetadata(filtered),

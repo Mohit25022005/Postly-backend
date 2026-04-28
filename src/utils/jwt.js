@@ -10,5 +10,15 @@ exports.generateAccessToken = (user) => {
 };
 
 exports.generateRefreshToken = () => {
-  return crypto.randomBytes(40).toString("hex");
+  const rawToken = crypto.randomBytes(40).toString("hex");
+
+  const hash = crypto
+    .createHash("sha256")
+    .update(rawToken)
+    .digest("hex");
+
+  return {
+    rawToken,
+    hash,
+  };
 };

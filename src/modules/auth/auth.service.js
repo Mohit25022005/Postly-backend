@@ -1,4 +1,5 @@
 const bcrypt = require("bcrypt");
+const crypto = require("crypto");
 const prisma = require("../../config/db");
 const {
   generateAccessToken,
@@ -30,38 +31,95 @@ exports.login = async ({ email, password }) => {
   if (!valid) throw new Error("Invalid credentials");
 
   const accessToken = generateAccessToken(user);
-  const refreshToken = generateRefreshToken();
+  const { rawToken, hash } = generateRefreshToken();
 
-  await prisma.user.update({
-    where: { id: user.id },
-    data: { refresh_token: refreshToken },
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + 7);
+
+  await prisma.refreshToken.create({
+    data: {
+      token_hash: hash,
+      user_id: user.id,
+      expires_at: expiresAt,
+    },
   });
 
-  return { accessToken, refreshToken };
+  return {
+    accessToken,
+    refreshToken: rawToken,
+  };
 };
 
 exports.refresh = async (refreshToken) => {
-  const user = await prisma.user.findFirst({
-    where: { refresh_token: refreshToken },
+  // 1. Hash incoming token
+  const hash = crypto
+    .createHash("sha256")
+    .update(refreshToken)
+    .digest("hex");
+
+  // 2. Find token in DB
+  const tokenRecord = await prisma.refreshToken.findUnique({
+    where: { token_hash: hash },
   });
 
-  if (!user) throw new Error("Invalid refresh token");
+  if (!tokenRecord) throw new Error("Invalid refresh token");
 
-  // ROTATION (very important)
-  const newAccessToken = generateAccessToken(user);
-  const newRefreshToken = generateRefreshToken();
+  // 3. Check expiry
+  if (tokenRecord.expires_at < new Date()) {
+    throw new Error("Refresh token expired");
+  }
 
-  await prisma.user.update({
-    where: { id: user.id },
-    data: { refresh_token: newRefreshToken },
+  // 4. (Optional but good) check revoked
+  if (tokenRecord.revoked) {
+    throw new Error("Refresh token revoked");
+  }
+
+  // 5. Get user
+  const user = await prisma.user.findUnique({
+    where: { id: tokenRecord.user_id },
   });
 
-  return { accessToken: newAccessToken, refreshToken: newRefreshToken };
+  if (!user) throw new Error("User not found");
+
+  // 6. DELETE old token (rotation)
+  await prisma.refreshToken.delete({
+    where: { id: tokenRecord.id },
+  });
+
+  // 7. Generate new tokens
+  const newAccessToken = generateAccessToken({
+    id: user.id,
+    email: user.email,
+  });
+
+  const { rawToken, hash: newHash } = generateRefreshToken();
+
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + 7);
+
+  // 8. Store new token
+  await prisma.refreshToken.create({
+    data: {
+      token_hash: newHash,
+      user_id: user.id,
+      expires_at: expiresAt,
+    },
+  });
+
+  // 9. Return tokens
+  return {
+    accessToken: newAccessToken,
+    refreshToken: rawToken,
+  };
 };
 
-exports.logout = async (userId) => {
-  await prisma.user.update({
-    where: { id: userId },
-    data: { refresh_token: null },
+exports.logout = async (refreshToken) => {
+  const hash = crypto
+    .createHash("sha256")
+    .update(refreshToken)
+    .digest("hex");
+
+  await prisma.refreshToken.deleteMany({
+    where: { token_hash: hash },
   });
 };

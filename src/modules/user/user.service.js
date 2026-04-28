@@ -13,6 +13,7 @@ exports.findOrCreateTelegramUser = async (telegramUser) => {
       social_accounts: {
         some: {},
       },
+      telegram_id: null,
     },
   });
 
@@ -97,21 +98,33 @@ exports.addSocialAccount = async (userId, data) => {
       user_id: userId,
       platform: data.platform,
       access_token_enc: encrypt(data.access_token),
-      refresh_token_enc: encrypt(data.refresh_token || ""),
+      refresh_token_enc: data.refresh_token ? encrypt(data.refresh_token) : null,
       handle: data.handle,
     },
   });
 };
 
 exports.getSocialAccounts = async (userId) => {
-  return prisma.socialAccount.findMany({
+  const accounts = await prisma.socialAccount.findMany({
     where: { user_id: userId },
   });
+
+  // NEVER return raw tokens - mask them
+  return accounts.map(acc => ({
+    id: acc.id,
+    platform: acc.platform,
+    handle: acc.handle,
+    connected_at: acc.connected_at,
+    // Explicitly exclude: access_token_enc, refresh_token_enc
+  }));
 };
 
 exports.deleteSocialAccount = async (userId, id) => {
-  return prisma.socialAccount.delete({
-    where: { id },
+  return prisma.socialAccount.deleteMany({
+    where: {
+      id,
+      user_id: userId,
+    },
   });
 };
 
@@ -120,13 +133,13 @@ exports.saveAIKeys = async (userId, data) => {
   return prisma.aIKey.upsert({
     where: { user_id: userId },
     update: {
-      openai_key_enc: encrypt(data.openai_key || ""),
-      anthropic_key_enc: encrypt(data.anthropic_key || ""),
+      openai_key_enc: data.openai_key ? encrypt(data.openai_key) : null,
+      anthropic_key_enc: data.anthropic_key ? encrypt(data.anthropic_key) : null,
     },
     create: {
       user_id: userId,
-      openai_key_enc: encrypt(data.openai_key || ""),
-      anthropic_key_enc: encrypt(data.anthropic_key || ""),
+      openai_key_enc: data.openai_key ? encrypt(data.openai_key) : null,
+      anthropic_key_enc: data.anthropic_key ? encrypt(data.anthropic_key) : null,
     },
   });
 };
