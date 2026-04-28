@@ -1,17 +1,17 @@
 const TelegramBot = require("node-telegram-bot-api");
 const botService = require("./bot.service");
 
-const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, {
+const token = process.env.TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_TOKEN;
+
+const bot = new TelegramBot(token, {
     polling: false,
 });
 
-bot.start = async (app) => {
+bot.start = async () => {
     if (process.env.NODE_ENV === "production") {
-        await bot.setWebHook(`${process.env.BASE_URL}/bot/webhook`);
-        app.post("/bot/webhook", (req, res) => {
-            bot.processUpdate(req.body);
-            res.sendStatus(200);
-        });
+        const webhookUrl = `${process.env.BASE_URL}/bot/webhook`;
+        await bot.setWebHook(webhookUrl);
+        console.log(`[BOT] Webhook mode active: ${webhookUrl}`);
     } else {
         bot.startPolling();
         process.once("SIGINT", () => bot.stopPolling({ reason: "SIGINT" }));

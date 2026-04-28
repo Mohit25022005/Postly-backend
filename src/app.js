@@ -2,6 +2,7 @@ const express = require("express");
 const helmet = require("helmet");
 const cors = require("cors");
 const rateLimit = require("express-rate-limit");
+const bot = require("./modules/bot/bot");
 const app = express();
 
 // Security headers
@@ -16,6 +17,18 @@ app.use(cors({
 // Body parsing
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+app.post(
+  "/bot/webhook",
+  (req, res, next) => {
+    console.log("Webhook hit:", JSON.stringify(req.body).slice(0, 100));
+    next();
+  },
+  (req, res) => {
+    bot.processUpdate(req.body);
+    res.sendStatus(200);
+  }
+);
 
 // Rate limiting - global
 app.use(rateLimit({
