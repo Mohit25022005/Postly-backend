@@ -37,20 +37,19 @@ exports.getStats = async (req, res) => {
         ? 0
         : ((successful / totalPlatformPosts) * 100).toFixed(2);
 
-    // posts per platform
-    const perPlatformRaw = await prisma.platformPost.groupBy({
-      by: ["platform"],
-      where: {
-        post: { user_id: userId },
-      },
-      _count: true,
-    });
+    const [twitter, linkedin, instagram, threads] = await Promise.all([
+      prisma.platformPost.count({ where: { platform: "twitter", post: { user_id: userId } } }),
+      prisma.platformPost.count({ where: { platform: "linkedin", post: { user_id: userId } } }),
+      prisma.platformPost.count({ where: { platform: "instagram", post: { user_id: userId } } }),
+      prisma.platformPost.count({ where: { platform: "threads", post: { user_id: userId } } }),
+    ]);
 
-    // Transform to object format
-    const postsPerPlatform = {};
-    perPlatformRaw.forEach(p => {
-      postsPerPlatform[p.platform] = p._count;
-    });
+    const postsPerPlatform = {
+      twitter,
+      linkedin,
+      instagram,
+      threads,
+    };
 
     // posts this week
     const weekAgo = new Date();
