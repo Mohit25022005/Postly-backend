@@ -1,4 +1,4 @@
-## 🚀 Live API: https://YOUR_APP.railway.app
+## 🚀 Live API: https://postly-backend-4wm9.onrender.com
 
 # Postly Backend
 
