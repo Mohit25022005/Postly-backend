@@ -6,7 +6,7 @@
   "variable": [
     {
       "key": "base_url",
-      "value": "http://localhost:5000"
+      "value": "https://postly-backend-4wm9.onrender.com"
     },
     {
       "key": "access_token",
