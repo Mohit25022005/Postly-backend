@@ -12,16 +12,29 @@ const SESSION_TTL_SECONDS = 1800;
 const sessionKey = (chatId) => `bot:session:${chatId}`;
 
 const getState = async (chatId) => {
-    const data = await redis.get(sessionKey(chatId));
-    return data ? JSON.parse(data) : null;
+    try {
+        const data = await redis.get(sessionKey(chatId));
+        return data ? JSON.parse(data) : null;
+    } catch (err) {
+        console.error("[BOT] Redis getState error:", err.message);
+        return null;
+    }
 };
 
 const setState = async (chatId, state) => {
-    await redis.set(sessionKey(chatId), JSON.stringify(state), "EX", SESSION_TTL_SECONDS);
+    try {
+        await redis.set(sessionKey(chatId), JSON.stringify(state), "EX", SESSION_TTL_SECONDS);
+    } catch (err) {
+        console.error("[BOT] Redis setState error:", err.message);
+    }
 };
 
 const clearState = async (chatId) => {
-    await redis.del(sessionKey(chatId));
+    try {
+        await redis.del(sessionKey(chatId));
+    } catch (err) {
+        console.error("[BOT] Redis clearState error:", err.message);
+    }
 };
 
 const sendButtonWarning = (bot, chatId) => {

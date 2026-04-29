@@ -24,8 +24,12 @@ app.post(
     console.log("Webhook hit:", JSON.stringify(req.body).slice(0, 100));
     next();
   },
-  (req, res) => {
-    bot.processUpdate(req.body);
+  async (req, res) => {
+    try {
+      await bot.processUpdate(req.body);
+    } catch (err) {
+      console.error("[WEBHOOK] processUpdate error:", err.message);
+    }
     res.sendStatus(200);
   }
 );

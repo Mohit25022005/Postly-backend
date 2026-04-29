@@ -3,6 +3,11 @@ const botService = require("./bot.service");
 
 const token = process.env.TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_TOKEN;
 
+if (!token) {
+    console.error("[BOT] FATAL: TELEGRAM_BOT_TOKEN is not set!");
+    process.exit(1);
+}
+
 const bot = new TelegramBot(token, {
     polling: false,
 });
@@ -85,11 +90,23 @@ bot.onText(/\/help/, async (msg) => {
 bot.on("message", async (msg) => {
     if (msg.text?.startsWith("/")) return;
 
-    await botService.handleMessage(bot, msg);
+    try {
+        await botService.handleMessage(bot, msg);
+    } catch (err) {
+        console.error("[BOT] handleMessage error:", err.message);
+        if (msg.chat?.id) {
+            bot.sendMessage(msg.chat.id, "Something went wrong. Try /start");
+        }
+    }
 });
 
 bot.on("callback_query", async (query) => {
-    await botService.handleCallback(bot, query);
+    try {
+        await botService.handleCallback(bot, query);
+    } catch (err) {
+        console.error("[BOT] handleCallback error:", err.message);
+        bot.answerCallbackQuery(query.id, { text: "Error processing request" });
+    }
 });
 
 bot.onText(/\/cancel/, async (msg) => {
