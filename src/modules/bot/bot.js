@@ -19,11 +19,29 @@ bot.on("polling_error", (err) => {
 bot.start = async () => {
     if (process.env.NODE_ENV === "production") {
         const webhookUrl = `${process.env.BASE_URL}/bot/webhook`;
-        // Drop all pending updates so stale callbacks do not crash server startup.
-        await bot.setWebHook("");
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        await bot.setWebHook(webhookUrl);
-        console.log(`[BOT] Webhook set: ${webhookUrl}`);
+        
+        const setWebhookWithRetry = async () => {
+            try {
+                // Drop all pending updates so stale callbacks do not crash server startup.
+                await bot.setWebHook("");
+                await new Promise((resolve) => setTimeout(resolve, 1000));
+                await bot.setWebHook(webhookUrl);
+                console.log(`[BOT] Webhook set: ${webhookUrl}`);
+            } catch (err) {
+                console.error("[BOT] setWebhook failed:", err.message);
+                // Try once more after 3 seconds
+                setTimeout(async () => {
+                    try {
+                        await bot.setWebHook(webhookUrl);
+                        console.log("[BOT] Webhook set on retry");
+                    } catch (e) {
+                        console.error("[BOT] Webhook retry failed:", e.message);
+                    }
+                }, 3000);
+            }
+        };
+        
+        setWebhookWithRetry();
     } else {
         bot.startPolling();
         process.once("SIGINT", () => bot.stopPolling({ reason: "SIGINT" }));
